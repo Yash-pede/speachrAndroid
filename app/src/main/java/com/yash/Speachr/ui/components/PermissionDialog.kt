@@ -63,6 +63,17 @@ class RecordAudioPermissionTextProvider : PermissionTextProvider {
     }
 }
 
+class OverlayPermissionTextProvider : PermissionTextProvider {
+    override fun getDescription(isPermanentlyDeclined: Boolean): String {
+        return if (isPermanentlyDeclined) {
+            "It seems like you have permanently declined Display over other apps permission. " +
+                    "You can go to the app settings to grant it."
+        } else {
+            "This app needs this permission to show the app bubble"
+        }
+    }
+}
+
 fun isPermanentlyDeclined(permission: String, activity: Activity?, context: Context): Boolean {
     val isDenied =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_DENIED

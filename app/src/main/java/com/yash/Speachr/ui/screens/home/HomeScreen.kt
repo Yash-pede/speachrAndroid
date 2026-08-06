@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.icu.text.CaseMap
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,8 +30,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yash.Speachr.ui.components.MainViewModel
+import com.yash.Speachr.ui.components.OverlayPermissionTextProvider
 import com.yash.Speachr.ui.components.PermissionDialog
 import com.yash.Speachr.ui.components.RecordAudioPermissionTextProvider
 import com.yash.Speachr.ui.components.isPermanentlyDeclined
@@ -38,22 +41,38 @@ import com.yash.Speachr.ui.theme.SpeachrTheme
 
 @Composable
 fun HomeScreen(modifier: Modifier = Modifier) {
-    var isPermissionGranted by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val activity = context as? Activity
+
+    var micGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    var overlayGranted by remember {
+        mutableStateOf(
+            Settings.canDrawOverlays(context)
+        )
+    }
 
     val viewModel = viewModel<MainViewModel>()
     val dialogQueue = viewModel.visiblePermissionDialogQueue
 
-    val context = LocalContext.current
-    val activity = context as? Activity
 
-    val audioPermissionResultLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { isGranted ->
-            isPermissionGranted = isGranted
-            viewModel.onPermissionResult(
-                permission = Manifest.permission.RECORD_AUDIO,
-                isGranted = isGranted
-            )
+    val multiPermissionResultLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { perms ->
+            perms.keys.forEach { permission ->
+                micGranted = perms[permission] == true
+                viewModel.onPermissionResult(
+                    permission = permission,
+                    isGranted = perms[permission] == true
+                )
+            }
         }
     )
 
@@ -83,16 +102,37 @@ fun HomeScreen(modifier: Modifier = Modifier) {
 
         // Permission Box (Dummy UI)
         AnimatedVisibility(
-            visible = !isPermissionGranted,
+            visible = !micGranted,
             enter = expandVertically(),
             exit = shrinkVertically()
         ) {
             PermissionCard(
                 onClick = {
-                    audioPermissionResultLauncher.launch(
-                        Manifest.permission.RECORD_AUDIO
+                    multiPermissionResultLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.RECORD_AUDIO,
+                        )
                     )
-                }
+                },
+                "Audio Permission Required",
+                "Speachr needs access to your microphone to transcribe your voice."
+            )
+        }
+
+        AnimatedVisibility(
+            visible = !overlayGranted,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+
+            PermissionCard(
+                onClick = {
+                    context.openSettingsPage(Manifest.permission.SYSTEM_ALERT_WINDOW)
+
+                },
+                "Overlay Permission Required.",
+                "This permission is required to display the app bubble at all times."
             )
         }
 
@@ -100,7 +140,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
 
         // Recording Button Section
         RecordingButton(
-            isEnabled = isPermissionGranted,
+            isEnabled = micGranted,
             onClick = { /* Handle actual recording logic here */ }
         )
 
@@ -110,6 +150,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
         PermissionDialog(
             permissionTextProvider = when (permission) {
                 Manifest.permission.RECORD_AUDIO -> RecordAudioPermissionTextProvider()
+//                Manifest.permission.SYSTEM_ALERT_WINDOW -> OverlayPermissionTextProvider()
                 else -> return@forEach
             },
             isPermanentlyDeclined = isPermanentlyDeclined(
@@ -120,20 +161,28 @@ fun HomeScreen(modifier: Modifier = Modifier) {
             onDismiss = viewModel::dismissDialog,
             onOkClick = {
                 viewModel.dismissDialog()
-                audioPermissionResultLauncher.launch(
-                    Manifest.permission.RECORD_AUDIO
+                multiPermissionResultLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.RECORD_AUDIO,
+//                        Manifest.permission.SYSTEM_ALERT_WINDOW
+                    )
                 )
             },
             onGoToAppSettingsClick = {
                 viewModel.dismissDialog()
-                context.openAppSystemSettings()
+                context.openSettingsPage(permission)
             }
         )
     }
 }
 
 @Composable
-fun PermissionCard(onClick: () -> Unit) {
+fun PermissionCard(
+    onClick: () -> Unit,
+    title: String,
+    description: String,
+    btnText: String = "Grant Permission"
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -156,13 +205,13 @@ fun PermissionCard(onClick: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(SpeachrTheme.spacing.small))
             Text(
-                text = "Audio Permission Required",
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(SpeachrTheme.spacing.extraSmall))
             Text(
-                text = "Speachr needs access to your microphone to transcribe your voice.",
+                text = description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = SpeachrTheme.colors.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -173,7 +222,7 @@ fun PermissionCard(onClick: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Grant Permission")
+                Text(btnText)
             }
         }
     }
@@ -211,12 +260,24 @@ fun RecordingButton(isEnabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-fun Context.openAppSystemSettings() {
-    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-        // Points the intent target exactly to your application's package name
-        data = Uri.fromParts("package", packageName, null)
-        // Required if calling startActivity outside an Activity context context wrapper
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+fun Context.openSettingsPage(permission: String) {
+    when (permission) {
+        Manifest.permission.RECORD_AUDIO -> {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                // Points the intent target exactly to your application's package name
+                data = Uri.fromParts("package", packageName, null)
+                // Required if calling startActivity outside an Activity context context wrapper
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        }
+
+        Manifest.permission.SYSTEM_ALERT_WINDOW -> {
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+            startActivity(intent)
+        }
+
+        else -> Unit
     }
-    startActivity(intent)
+
 }
