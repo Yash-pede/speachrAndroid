@@ -74,6 +74,17 @@ class OverlayPermissionTextProvider : PermissionTextProvider {
     }
 }
 
+class AccessibilityPermissionTextProvider : PermissionTextProvider {
+    override fun getDescription(isPermanentlyDeclined: Boolean): String {
+        return if (isPermanentlyDeclined) {
+            "It seems like you have permanently declined the accessibility service. " +
+                    "You can go to the system settings to enable it."
+        } else {
+            "Speachr needs the accessibility service to automatically paste translated text into input fields for you."
+        }
+    }
+}
+
 fun isPermanentlyDeclined(permission: String, activity: Activity?, context: Context): Boolean {
     val isDenied =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_DENIED
