@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.icu.text.CaseMap
 import android.net.Uri
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,7 +35,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -57,6 +57,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val activity = context as? Activity
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as PowerManager }
 
     var micGranted by remember {
         mutableStateOf(
@@ -74,6 +75,10 @@ fun HomeScreen(modifier: Modifier = Modifier) {
         mutableStateOf(context.isAccessibilityServiceEnabled())
     }
 
+    var batteryIgnored by remember {
+        mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName))
+    }
+
     // Refresh permissions when app comes to foreground
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -83,6 +88,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 overlayGranted = Settings.canDrawOverlays(context)
                 accessibilityGranted = context.isAccessibilityServiceEnabled()
+                batteryIgnored = powerManager.isIgnoringBatteryOptimizations(context.packageName)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -145,6 +151,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
             micGranted = micGranted,
             overlayGranted = overlayGranted,
             accessibilityGranted = accessibilityGranted,
+            batteryIgnored = batteryIgnored,
             onMicClick = {
                 multiPermissionResultLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
             },
@@ -153,6 +160,9 @@ fun HomeScreen(modifier: Modifier = Modifier) {
             },
             onAccessibilityClick = {
                 context.openSettingsPage(Manifest.permission.BIND_ACCESSIBILITY_SERVICE)
+            },
+            onBatteryClick = {
+                context.openSettingsPage(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
             }
         )
 
@@ -160,7 +170,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(SpeachrTheme.spacing.large))
 
         // Recording Button Section
-        val allPermissionsGranted = micGranted && overlayGranted && accessibilityGranted
+        val allPermissionsGranted = micGranted && overlayGranted && accessibilityGranted && batteryIgnored
         RecordingButton(
             isEnabled = allPermissionsGranted,
             onClick = { /* Handle actual recording logic here */ }
@@ -201,9 +211,11 @@ fun RequirementsCard(
     micGranted: Boolean,
     overlayGranted: Boolean,
     accessibilityGranted: Boolean,
+    batteryIgnored: Boolean,
     onMicClick: () -> Unit,
     onOverlayClick: () -> Unit,
-    onAccessibilityClick: () -> Unit
+    onAccessibilityClick: () -> Unit,
+    onBatteryClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -248,6 +260,18 @@ fun RequirementsCard(
                 description = "Enables automatic text pasting",
                 isGranted = accessibilityGranted,
                 onClick = onAccessibilityClick
+            )
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = SpeachrTheme.spacing.small),
+                color = SpeachrTheme.colors.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            RequirementItem(
+                title = "Background Activity",
+                description = "Ensures app stays active during recording",
+                isGranted = batteryIgnored,
+                onClick = onBatteryClick
             )
         }
     }
@@ -345,21 +369,31 @@ fun Context.openSettingsPage(permission: String) {
     when (permission) {
         Manifest.permission.RECORD_AUDIO -> {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                // Points the intent target exactly to your application's package name
                 data = Uri.fromParts("package", packageName, null)
-                // Required if calling startActivity outside an Activity context context wrapper
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)
         }
 
         Manifest.permission.SYSTEM_ALERT_WINDOW -> {
-            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+            // Direct link to the app's specific overlay permission toggle
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                data = Uri.fromParts("package", packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             startActivity(intent)
         }
 
         Manifest.permission.BIND_ACCESSIBILITY_SERVICE -> {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        }
+
+        Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS -> {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.fromParts("package", packageName, null)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)

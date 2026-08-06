@@ -58,5 +58,16 @@ class PasteAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         Log.d(TAG, "Speachr Accessibility Service Successfully Connected!")
+
+        // Automatically bring the app back to front when service is enabled
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            launchIntent?.let {
+                it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                startActivity(it)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error returning to app: ${e.message}")
+        }
     }
 }

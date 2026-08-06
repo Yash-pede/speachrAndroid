@@ -2,4 +2,6 @@
     <string name="app_name">Speachr</string>
     <string name="accessibility_service_label">Speachr</string>
     <string name="accessibility_service_description">Enables Speachr to automatically paste transcribed text into apps you use. No data is stored or shared.</string>
+    <string name="battery_optimization_title">Background Activity</string>
+    <string name="battery_optimization_description">Ensures Speachr stays active for long recordings. Allow app to run in background.</string>
 </resources>
