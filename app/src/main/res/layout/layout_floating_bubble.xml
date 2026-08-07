@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <!-- Circular Glow (Controlled size to avoid window expansion issues) -->
+    <View
+        android:id="@+id/glow_view"
+        android:layout_width="160dp"
+        android:layout_height="160dp"
+        android:layout_gravity="center"
+        android:alpha="0"
+        android:visibility="invisible"
+        android:background="@drawable/glow_circle" />
+
+    <androidx.cardview.widget.CardView
+        android:id="@+id/bubble_card"
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_gravity="center"
+        android:layout_margin="10dp"
+        app:cardBackgroundColor="#00000000"
+        app:cardCornerRadius="40dp"
+        app:cardElevation="0dp"
+        app:cardMaxElevation="0dp"
+        app:cardPreventCornerOverlap="false">
+
+        <ImageView
+            android:id="@+id/bubble_logo"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerInside"
+            android:src="@mipmap/ic_launcher"
+            android:contentDescription="Speachr Mic" />
+
+    </androidx.cardview.widget.CardView>
+
+</FrameLayout>

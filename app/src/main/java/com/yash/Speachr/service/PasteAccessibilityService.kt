@@ -2,6 +2,8 @@ package com.yash.Speachr.service
 
 import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
+import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -11,24 +13,42 @@ import android.view.accessibility.AccessibilityNodeInfo
 class PasteAccessibilityService : AccessibilityService() {
 
     private val TAG = "PasteService"
+    private val handler = Handler(Looper.getMainLooper())
+    private var stopServiceRunnable: Runnable? = null
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        // Safe check for null event
         if (event == null) return
 
-        // Check if the event is a focus or click on an input box
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED) {
-            val sourceNode: AccessibilityNodeInfo? = event.source ?: return
-
-            // Verify if the active element is actually an editable text field
-            if (sourceNode?.isEditable == true) {
-                Log.d(TAG, "User clicked or focused inside a text box!")
-
-                // Wait 2 seconds (2000 milliseconds) and then paste text automatically
-                Handler(Looper.getMainLooper()).postDelayed({
-                    pasteTestText(sourceNode)
-                }, 2000)
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_FOCUSED, AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                val sourceNode: AccessibilityNodeInfo? = event.source
+                if (sourceNode?.isEditable == true) {
+                    Log.d(TAG, "Editable text field focused")
+                    cancelPendingStop()
+                    val serviceIntent = Intent(this, FloatingService::class.java)
+                    startForegroundService(serviceIntent)
+                } else {
+                    Log.d(TAG, "Focus lost from editable field")
+//                    scheduleStopService()
+                }
             }
+        }
+    }
+
+    private fun scheduleStopService() {
+        cancelPendingStop()
+        val runnable = Runnable {
+            Log.d(TAG, "Executing debounced stop service")
+            stopService(Intent(this, FloatingService::class.java))
+        }
+        stopServiceRunnable = runnable
+        handler.postDelayed(runnable, 500)
+    }
+
+    private fun cancelPendingStop() {
+        stopServiceRunnable?.let {
+            handler.removeCallbacks(it)
+            stopServiceRunnable = null
         }
     }
 
