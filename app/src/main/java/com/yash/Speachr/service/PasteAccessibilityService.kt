@@ -14,42 +14,54 @@ class PasteAccessibilityService : AccessibilityService() {
 
     private val TAG = "PasteService"
     private val handler = Handler(Looper.getMainLooper())
-    private var stopServiceRunnable: Runnable? = null
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event == null) return
 
         when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_FOCUSED, AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                val sourceNode: AccessibilityNodeInfo? = event.source
-                if (sourceNode?.isEditable == true) {
-                    Log.d(TAG, "Editable text field focused")
-                    cancelPendingStop()
-                    val serviceIntent = Intent(this, FloatingService::class.java)
-                    startForegroundService(serviceIntent)
-                } else {
-                    Log.d(TAG, "Focus lost from editable field")
-//                    scheduleStopService()
-                }
+            // Add TYPE_VIEW_CLICKED because sometimes users tap an already-focused text box
+            AccessibilityEvent.TYPE_VIEW_FOCUSED,
+            AccessibilityEvent.TYPE_VIEW_CLICKED,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                checkIfTextBoxIsActive()
             }
         }
     }
 
-    private fun scheduleStopService() {
-        cancelPendingStop()
-        val runnable = Runnable {
-            Log.d(TAG, "Executing debounced stop service")
-            stopService(Intent(this, FloatingService::class.java))
+    private fun checkIfTextBoxIsActive() {
+        // 1. Get the current top window the user is interacting with
+        val rootNode = rootInActiveWindow
+        if (rootNode == null) {
+            stopService()
+            return
         }
-        stopServiceRunnable = runnable
-        handler.postDelayed(runnable, 500)
+
+        // 2. Search the ENTIRE window for the specific element holding the keyboard focus
+        val focusedInputNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
+        // 3. If we found one, and it is editable, the user is ready to type!
+        if (focusedInputNode != null && focusedInputNode.isEditable) {
+            Log.d(TAG, "Editable text field is currently active! Keeping bubble.")
+
+            val serviceIntent = Intent(this, FloatingService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } else {
+            Log.d(TAG, "No editable field found on screen. Hiding bubble.")
+            stopService()
+        }
+
+        // 4. Always recycle nodes to prevent memory leaks
+        focusedInputNode?.recycle()
+        rootNode.recycle()
     }
 
-    private fun cancelPendingStop() {
-        stopServiceRunnable?.let {
-            handler.removeCallbacks(it)
-            stopServiceRunnable = null
-        }
+
+    private fun stopService() {
+        stopService(Intent(this, FloatingService::class.java))
     }
 
     private fun pasteTestText(node: AccessibilityNodeInfo) {
