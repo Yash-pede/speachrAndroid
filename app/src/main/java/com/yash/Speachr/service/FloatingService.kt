@@ -194,6 +194,10 @@ class FloatingService : Service() {
         // Animate size decrease
         animateScale(1.0f)
         stopPulsing()
+
+        PasteAccessibilityService.pasteText("This is a sample demo text")
+        Log.d("bubble", "Text paste")
+
     }
 
     private fun animateScale(scale: Float) {

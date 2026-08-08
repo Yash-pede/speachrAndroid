@@ -1,6 +1,7 @@
 package com.yash.Speachr.service
 
 import android.accessibilityservice.AccessibilityService
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.content.Intent
 import android.os.Build
@@ -13,33 +14,82 @@ import android.view.accessibility.AccessibilityNodeInfo
 class PasteAccessibilityService : AccessibilityService() {
 
     private val TAG = "PasteService"
-    private val handler = Handler(Looper.getMainLooper())
+
+    companion object {
+
+        @SuppressLint("StaticFieldLeak")
+        var instance: PasteAccessibilityService? = null
+        fun pasteText(text: String) {
+            val service = instance ?: return
+            try {
+                val rootNode = service.rootInActiveWindow ?: return
+
+                val focusedInputNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
+                if (focusedInputNode != null && focusedInputNode.isEditable) {
+                    val existingText = focusedInputNode.text?.toString() ?: ""
+
+                    val cursorStart = focusedInputNode.textSelectionStart
+                    val cursorEnd = focusedInputNode.textSelectionEnd
+
+                    val combinedText =
+                        if (cursorStart in 0..existingText.length && cursorEnd in 0..existingText.length) {
+                            // If the cursor is valid, slice the text into two parts
+                            val realStart = minOf(cursorStart, cursorEnd)
+                            val realEnd = maxOf(cursorStart, cursorEnd)
+
+                            val beforeCursor = existingText.substring(0, realStart)
+                            val afterCursor = existingText.substring(realEnd)
+
+                            // Sandwich our new text in the middle!
+                            // (Adding a space before the new text if needed)
+                            val space =
+                                if (beforeCursor.isNotEmpty() && !beforeCursor.endsWith(" ")) " " else ""
+                            "$beforeCursor$space$text$space$afterCursor"
+                        } else {
+                            // Fallback: If no cursor is found, just append to the end
+                            if (existingText.isNotEmpty()) "$existingText $text" else text
+                        }
+
+                    val arguments = Bundle().apply {
+                        putCharSequence(
+                            AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                            combinedText
+                        )
+                    }
+
+                    val success = focusedInputNode.performAction(
+                        AccessibilityNodeInfo.ACTION_SET_TEXT, arguments
+                    )
+                    Log.d("paste", "Paste attempt status: $success")
+                }
+            } catch (e: Exception) {
+                Log.e("paste", "Error trying to paste text: ${e.message}")
+            }
+        }
+
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event == null) return
 
         when (event.eventType) {
             // Add TYPE_VIEW_CLICKED because sometimes users tap an already-focused text box
-            AccessibilityEvent.TYPE_VIEW_FOCUSED,
-            AccessibilityEvent.TYPE_VIEW_CLICKED,
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+            AccessibilityEvent.TYPE_VIEW_FOCUSED, AccessibilityEvent.TYPE_VIEW_CLICKED, AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 checkIfTextBoxIsActive()
             }
         }
     }
 
     private fun checkIfTextBoxIsActive() {
-        // 1. Get the current top window the user is interacting with
         val rootNode = rootInActiveWindow
         if (rootNode == null) {
             stopService()
             return
         }
 
-        // 2. Search the ENTIRE window for the specific element holding the keyboard focus
         val focusedInputNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
 
-        // 3. If we found one, and it is editable, the user is ready to type!
         if (focusedInputNode != null && focusedInputNode.isEditable) {
             Log.d(TAG, "Editable text field is currently active! Keeping bubble.")
 
@@ -54,7 +104,6 @@ class PasteAccessibilityService : AccessibilityService() {
             stopService()
         }
 
-        // 4. Always recycle nodes to prevent memory leaks
         focusedInputNode?.recycle()
         rootNode.recycle()
     }
@@ -64,31 +113,14 @@ class PasteAccessibilityService : AccessibilityService() {
         stopService(Intent(this, FloatingService::class.java))
     }
 
-    private fun pasteTestText(node: AccessibilityNodeInfo) {
-        try {
-            // Check if the text field is still active and valid in memory
-            if (node.isEditable) {
-                val arguments = Bundle().apply {
-                    putCharSequence(
-                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                        "Hello from Speachr!"
-                    )
-                }
-
-                // Injects the text directly into the selected field
-                val success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                Log.d(TAG, "Paste attempt status: $success")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error trying to paste text: ${e.message}")
-        }
-    }
-
     override fun onInterrupt() {
         Log.d(TAG, "Service Interrupted")
     }
 
     override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+
         Log.d(TAG, "Speachr Accessibility Service Successfully Connected!")
 
         // Automatically bring the app back to front when service is enabled
