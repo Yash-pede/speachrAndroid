@@ -27,8 +27,10 @@ class PasteAccessibilityService : AccessibilityService() {
                 val focusedInputNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
 
                 if (focusedInputNode != null && focusedInputNode.isEditable) {
-                    val existingText = focusedInputNode.text?.toString() ?: ""
-
+                    var existingText = focusedInputNode.text?.toString() ?: ""
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && focusedInputNode.isShowingHintText) {
+                        existingText = ""
+                    }
                     val cursorStart = focusedInputNode.textSelectionStart
                     val cursorEnd = focusedInputNode.textSelectionEnd
 
