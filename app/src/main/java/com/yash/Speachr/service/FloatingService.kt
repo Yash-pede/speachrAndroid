@@ -13,6 +13,7 @@ import android.content.pm.ServiceInfo
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -22,8 +23,16 @@ import android.widget.ImageView
 import androidx.cardview.widget.CardView
 import androidx.core.app.NotificationCompat
 import com.yash.Speachr.R
+import com.yash.Speachr.repository.AudioRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+import java.io.File
 
-class FloatingService : Service() {
+class FloatingService : Service(), KoinComponent {
     private lateinit var windowManager: WindowManager
     private lateinit var floatingView: View
     private lateinit var params: WindowManager.LayoutParams
@@ -32,8 +41,14 @@ class FloatingService : Service() {
     private lateinit var bubbleLogo: ImageView
     private lateinit var glowView: View
 
+    private val audioRepository: AudioRepository by inject()
+    private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
+
     private var isRecording = false
     private var pulseAnimator: AnimatorSet? = null
+
+    private var mediaRecorder: MediaRecorder? = null
+    private var audioFile: File? = null
 
     override fun onBind(p0: Intent?): IBinder? = null
 
@@ -133,7 +148,7 @@ class FloatingService : Service() {
 
                     MotionEvent.ACTION_UP -> {
                         if (isLongPressActive && isRecording) {
-                            stopRecordingUI()
+                            stopRecording()
                             isLongPressActive = false
                         }
                         return true
@@ -162,15 +177,72 @@ class FloatingService : Service() {
 
     private fun toggleRecording() {
         if (isRecording) {
-            stopRecordingUI()
+            stopRecording()
         } else {
-            startRecordingUI()
+            startRecording()
+        }
+    }
+
+    private fun startRecording() {
+        if (isRecording) return
+        isRecording = true
+        Log.d("Speachr", "Recording Started")
+
+        startRecordingUI()
+
+        try {
+            audioFile = File(externalCacheDir, "recording.3gp")
+            mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(this)
+            } else {
+                @Suppress("DEPRECATION") MediaRecorder()
+            }.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                setOutputFile(audioFile?.absolutePath)
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            Log.e("Speachr", "MediaRecorder prepare() failed", e)
+            stopRecording()
+        }
+    }
+
+    private fun stopRecording() {
+        if (!isRecording) return
+        isRecording = false
+        Log.d("Speachr", "Recording Stopped")
+
+        stopRecordingUI()
+
+        try {
+            mediaRecorder?.apply {
+                stop()
+                release()
+            }
+            mediaRecorder = null
+
+            // Upload the file
+            audioFile?.let { file ->
+                serviceScope.launch {
+                    val result = audioRepository.transcribeAudio(file)
+                    if (result != null) {
+                        Log.d("Speachr", "Transcription: $result")
+                        PasteAccessibilityService.pasteText(result.text)
+                    } else {
+                        Log.e("Speachr", "Transcription failed")
+                        PasteAccessibilityService.pasteText("\uD83D\uDE1E Error")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("Speachr", "MediaRecorder stop failed", e)
         }
     }
 
     private fun startRecordingUI() {
-        if (isRecording) return
-        isRecording = true
         Log.d("Speachr", "Recording UI Started")
 
         // Switch icon and background
@@ -183,8 +255,6 @@ class FloatingService : Service() {
     }
 
     private fun stopRecordingUI() {
-        if (!isRecording) return
-        isRecording = false
         Log.d("Speachr", "Recording UI Stopped")
 
         // Switch back to app icon and transparency
@@ -194,10 +264,6 @@ class FloatingService : Service() {
         // Animate size decrease
         animateScale(1.0f)
         stopPulsing()
-
-        PasteAccessibilityService.pasteText("This is a sample demo text")
-        Log.d("bubble", "Text paste")
-
     }
 
     private fun animateScale(scale: Float) {

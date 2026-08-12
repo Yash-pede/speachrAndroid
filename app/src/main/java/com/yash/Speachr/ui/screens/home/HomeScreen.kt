@@ -51,12 +51,15 @@ import com.yash.Speachr.ui.components.PermissionDialog
 import com.yash.Speachr.ui.components.RecordAudioPermissionTextProvider
 import com.yash.Speachr.ui.components.isPermanentlyDeclined
 import com.yash.Speachr.ui.theme.SpeachrTheme
+import org.koin.androidx.compose.koinViewModel
 
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier) {
+fun HomeScreen(
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as PowerManager }
 
     var micGranted by remember {
